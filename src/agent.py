@@ -187,48 +187,52 @@ class EasyMate:
             }
         ]
 
-    def input(self, msg: str) -> str:
+    def input(self, msg: str, max_iterations=10) -> str:
         self.messages.append({"role": "user", "content": msg})
+        print("AI思考中...")
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=self.messages,
-            tools=self.tools,
-            tool_choice="auto"
-        )
-        message = response.choices[0].message
-        self.messages.append(message)
-
-        if message.tool_calls:
-            for tool_call in message.tool_calls:
-                func_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
-
-                if func_name == "time":
-                    result = tools.get_time()
-                elif func_name == "read":
-                    result = tools.read_file(**arguments)
-                elif func_name == "write":
-                    result = tools.write_file(**arguments)
-                elif func_name == "command":
-                    result = tools.execute_command(**arguments)
-                else:
-                    result = f"未知工具：{func_name}"
-
-                self.messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": str(result)
-                })
-
-            final_response = self.client.chat.completions.create(
+        iteration = 0
+        while iteration < max_iterations:
+            response = self.client.chat.completions.create(
                 model=self.model,
-                messages=self.messages
+                messages=self.messages,
+                tools=self.tools,
+                tool_choice="auto"
             )
-            final_answer = final_response.choices[0].message.content
-            self.messages.append({"role": "assistant", "content": final_answer})
-        else:
-            final_answer = message.content
-            self.messages.append({"role": "assistant", "content": final_answer})
+            message = response.choices[0].message
+            self.messages.append(message)
 
-        return final_answer
+            if not message.tool_calls:
+                return message.content
+
+            tool_call = message.tool_calls[0]
+            func_name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments)
+
+            if func_name == "time":
+                result = tools.get_time()
+                print("获取时间中...")
+            elif func_name == "read":
+                result = tools.read_file(**arguments)
+                print(f"读取文件{arguments}中...")
+            elif func_name == "write":
+                result = tools.write_file(**arguments)
+                print(f"写入文件{arguments}中...")
+            elif func_name == "command":
+                result = tools.execute_command(**arguments)
+                print(f"执行命令：{arguments}中...")
+            else:
+                result = f"未知工具：{func_name}"
+
+            self.messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": str(result)
+            })
+
+            if len(message.tool_calls) > 1:
+                print("⚠️ 模型返回了多个工具调用，将按顺序逐个执行，请稍候...")
+
+            iteration += 1
+
+        return "已达到最大迭代次数，任务可能未完成。"
