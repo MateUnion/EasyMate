@@ -34,6 +34,8 @@ cp config.example.json config.json
 }
 ```
 
+**注：不建议使用本地模型，建议使用glm-4.7-flash，不然智商太低，跑不了好东西，容易出问题**
+
 ### 4. 运行
 ```bash
 python main.py
