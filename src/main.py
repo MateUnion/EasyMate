@@ -29,13 +29,19 @@ def main():
     if missing:
         print(f"配置文件中缺少必需字段：{', '.join(missing)}")
         return
+    
+    try:
+        with open("memory.txt", "r", encoding="utf-8") as f:
+            pre_memory = f.read()
+    except FileNotFoundError:
+        pre_memory = ""
 
     if config.get("settings"):
         Agent = EasyMate(
             key=config["api_key"],
             url=config["base_url"],
             model=config["model"],
-            settings=config["settings"]
+            settings=f"{config['settings']}\n\n{pre_memory}"
         )
     else:
         Agent = EasyMate(
@@ -50,10 +56,13 @@ def main():
         print("用户：")
         msg = multi_line_input("")
         if msg.strip().lower() == "q":
+            with open("memory.txt", "w", encoding="utf-8") as f:
+                f.write(Agent.summarize_msg(len(Agent.msgs())))
             break
         if msg.strip() == "":
             continue
         print(f"AI：{Agent.input(msg)}")
+        Agent.memory()
 
 if __name__ == "__main__":
     main()

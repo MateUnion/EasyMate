@@ -46,6 +46,19 @@ user_guide = r"""
 """
 guide = f"{readmes_combined}\n\n---\n\n{user_guide}"
 
+summarize_guide = """
+请将以下对话内容总结为一个简洁的段落，重点保留以下信息：
+- 用户的核心需求或问题
+- 已确认的重要事实（如文件路径、偏好设置、任务状态）
+- AI 已执行的工具或操作（如读取了哪些文件、运行了什么命令）
+- 任何尚未完成的待办事项
+
+要求：
+- 摘要必须仅基于提供的对话，不要添加任何额外内容。
+- 语言简洁，控制在 100 字以内。
+- 忽略寒暄、重复或无关细节。
+"""
+
 class EasyMate:
     def __init__(self, key: str, url: str, model: str, settings="你是一个有用的AI助手。"):
         self.client = OpenAI(
@@ -54,7 +67,7 @@ class EasyMate:
         )
         self.model = model
         self.settings = f"{guide}\n\n{settings}"
-        self.messages = [{"role": "system", "content": f"{guide} \n {settings}"}]
+        self.messages = [{"role": "system", "content": self.settings}]
         self.tools = tools_metadata
 
     def input(self, msg: str, max_iterations=100) -> str:
@@ -70,28 +83,27 @@ class EasyMate:
                 tool_choice="auto"
             )
             message = response.choices[0].message
-            self.messages.append(message)
+            self.messages.append(message.model_dump())
 
             if not message.tool_calls:
                 return message.content
 
-            tool_call = message.tool_calls[0]
-            func_name = tool_call.function.name
-            arguments = json.loads(tool_call.function.arguments)
+            for tool_call in message.tool_calls:
+                func_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                func = tool_functions.get(func_name)
 
-            func = tool_functions.get(func_name)
-            if func:
-                result = func(**arguments)
-                print(f"使用工具{func_name}，调用参数{arguments}，正在进行中...")
-            else:
-                result = f"错误：未知工具{func_name}"
-                print(result)
-
-            self.messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": str(result)
-            })
+                if func:
+                    result = func(**arguments)
+                    print(f"使用工具{func_name}，调用参数{arguments}，正在进行中...")
+                else:
+                    result = f"错误：未知工具{func_name}"
+                    print(result)
+                self.messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": str(result)
+                })
 
             if len(message.tool_calls) > 1:
                 print("⚠️ 模型返回了多个工具调用，将按顺序逐个执行，请稍候...")
@@ -99,3 +111,26 @@ class EasyMate:
             iteration += 1
 
         return "已达到最大迭代次数，任务可能未完成。"
+    
+    def summarize_msg(self, idx: int) -> str:
+        summarize = self.messages[1:idx]
+        summarize.append({"role": "user", "content": summarize_guide})
+        
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=summarize
+        )
+
+        print("AI概括中...")
+
+        self.messages = [self.messages[0]] + [{"role": "system", "content": response.choices[0].message.content}] + self.messages[idx:]
+        return response.choices[0].message.content
+    
+    def memory(self, max_iterations=20):
+        if self.messages.__len__() <= max_iterations:
+            return
+        
+        self.summarize_msg(11)
+
+    def msgs(self) -> str:
+        return self.messages
