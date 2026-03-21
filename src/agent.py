@@ -1,10 +1,18 @@
+"""
+Agent模块 - AI智能体核心实现
+提供EasyMate类，负责与AI模型交互、工具调用和记忆管理
+"""
+
 import json
 import sys
 from pathlib import Path
 from openai import OpenAI
+
+# 导入工具系统
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from tools import tools_metadata, tool_functions, readmes_combined
 
+# 用户指南：说明如何正确调用工具
 user_guide = r"""
 ## 📌 工具调用方式
 当你决定使用某个工具时，请以标准的函数调用格式返回。例如，如果你要获取时间，你应该返回：
@@ -44,8 +52,11 @@ user_guide = r"""
 
 现在，你可以开始帮助用户了。记住：**安全第一，对于删除操作永远用移动替代直接删除。**
 """
+
+# 将工具的README和用户指南合并
 guide = f"{readmes_combined}\n\n---\n\n{user_guide}"
 
+# 摘要指南：说明如何总结对话内容
 summarize_guide = r"""
 请将以下对话内容总结为一个简洁的段落（这个段落将作为长期记忆传递给未来的AI，让它继承关键信息）。请用第三人称叙述，重点保留：
 - 用户的核心需求或问题
@@ -60,76 +71,129 @@ summarize_guide = r"""
 - 如果某项信息缺失，则省略。
 """
 
+
 class EasyMate:
+    """
+    AI智能体类
+    """
+
     def __init__(self, key: str, url: str, model: str, settings="你是一个有用的AI助手。"):
-        self.client = OpenAI(
-            api_key=key,
-            base_url=url
-        )
+        self.client = OpenAI(api_key=key, base_url=url)
         self.model = model
         self.settings = f"{guide}\n\n{settings}"
         self.messages = [{"role": "system", "content": self.settings}]
         self.tools = tools_metadata
 
-    def input(self, msg: str) -> str:
-        max_iterations=100
+    def input(self, msg: str, max_iterations=100):
+        """
+        处理用户消息，支持流式输出 AI 回复。
+        - 当模型返回文本时，逐字 yield 内容。
+        - 当模型需要调用工具时，同步执行工具，并将工具调用信息打印到 stdout（可被重定向）。
+        - 循环处理直到无工具调用。
+        """
         self.messages.append({"role": "user", "content": msg})
         print("AI思考中...")
 
         iteration = 0
         while iteration < max_iterations:
-            response = self.client.chat.completions.create(
+            # 先用流式方式调用，收集文本输出和工具调用增量
+            stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.messages,
                 tools=self.tools,
-                tool_choice="auto"
+                tool_choice="auto",
+                stream=True
             )
-            message = response.choices[0].message
-            self.messages.append(message.model_dump())
 
-            if not message.tool_calls:
-                return message.content
+            # 用于累积完整的响应
+            full_content = ""
+            tool_calls_data = {}  # 用于累积工具调用，key 为 index
 
-            for tool_call in message.tool_calls:
-                func_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
+            # 处理流式响应
+            for chunk in stream:
+                delta = chunk.choices[0].delta
+
+                # 处理文本内容
+                if delta.content:
+                    full_content += delta.content
+                    yield delta.content   # 实时输出
+
+                # 处理工具调用（增量）
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        if idx not in tool_calls_data:
+                            # 初始化工具调用对象
+                            tool_calls_data[idx] = {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""}
+                            }
+                        if tc.function.name:
+                            tool_calls_data[idx]["function"]["name"] += tc.function.name
+                        if tc.function.arguments:
+                            tool_calls_data[idx]["function"]["arguments"] += tc.function.arguments
+
+            # 构建完整的 assistant 消息
+            assistant_message = {
+                "role": "assistant",
+                "content": full_content,
+                "tool_calls": list(tool_calls_data.values()) if tool_calls_data else None
+            }
+            self.messages.append(assistant_message)
+
+            # 如果没有工具调用，结束
+            if not tool_calls_data:
+                return
+
+            # 有工具调用，逐个执行
+            for tool_call in tool_calls_data.values():
+                func_name = tool_call["function"]["name"]
+                arguments = json.loads(tool_call["function"]["arguments"])
                 func = tool_functions.get(func_name)
-
                 if func:
+                    print(f"使用工具 {func_name}，参数 {arguments}，正在进行中...")
                     result = func(**arguments)
-                    print(f"使用工具{func_name}，调用参数{arguments}，正在进行中...")
                 else:
-                    result = f"错误：未知工具{func_name}"
+                    result = f"错误：未知工具 {func_name}"
                     print(result)
+                # 将工具执行结果加入消息历史
                 self.messages.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
+                    "tool_call_id": tool_call["id"],
                     "content": str(result)
                 })
 
-            if len(message.tool_calls) > 1:
-                print("⚠️ 模型返回了多个工具调用，将按顺序逐个执行，请稍候...")
-
             iteration += 1
 
-        return "已达到最大迭代次数，任务可能未完成。"
-    
-    def summarize_msg(self, idx: int) -> str:
-        summarize = self.messages[1:idx]
-        summarize.append({"role": "user", "content": summarize_guide})
-        
-        print("AI概括中...")
+        # 达到最大迭代次数
+        yield "已达到最大迭代次数，任务可能未完成。"
 
-        response = self.client.chat.completions.create(
+    def summarize_msg(self, idx: int):
+        """
+        总结对话内容，用于记忆管理，流式输出摘要。
+        """
+        to_summarize = self.messages[1:idx]
+        to_summarize.append({"role": "user", "content": summarize_guide})
+        stream = self.client.chat.completions.create(
             model=self.model,
-            messages=summarize
+            messages=to_summarize,
+            stream=True
         )
+        full_summary = ""
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                full_summary += chunk.choices[0].delta.content
+                yield chunk.choices[0].delta.content
+        # 更新消息列表
+        self.messages = [self.messages[0]] + [{"role": "system", "content": full_summary}] + self.messages[idx:]
 
-        self.messages = [self.messages[0]] + [{"role": "system", "content": response.choices[0].message.content}] + self.messages[idx:]
-        return response.choices[0].message.content
-    
     def memory(self, max_iterations=20):
-        if self.messages.__len__() <= max_iterations:
+        """
+        记忆管理：当消息超过阈值时，自动压缩前10条。
+        """
+        if len(self.messages) <= max_iterations:
             return
-        
-        self.summarize_msg(11)
+        # 消费摘要生成器，完成压缩（忽略输出）
+        for _ in self.summarize_msg(11):
+            pass

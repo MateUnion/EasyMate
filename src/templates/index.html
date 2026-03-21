@@ -90,6 +90,7 @@
             border-radius: 18px;
             line-height: 1.4;
             word-wrap: break-word;
+            white-space: pre-wrap;
         }
         .message.user {
             background-color: #e6f3e6;
@@ -158,6 +159,7 @@
             max-height: 200px;
             overflow-y: auto;
             border-top: 1px solid #ddd;
+            white-space: pre-wrap;
         }
 
         #config-page {
@@ -356,20 +358,55 @@
             addMessage('user', message);
             const assistantMsgDiv = addMessage('assistant', '思考中...', true);
             consoleOutput.textContent = '';
+            consoleDetails.open = true; // 自动展开控制台
+
             try {
                 const resp = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: message })
                 });
-                const data = await resp.json();
-                if (data.error) {
-                    updateMessage(assistantMsgDiv, '错误: ' + data.error);
-                } else {
-                    updateMessage(assistantMsgDiv, data.answer);
-                    if (data.logs && data.logs.trim()) {
-                        consoleOutput.textContent = data.logs;
-                        consoleDetails.open = true;
+
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = '';
+                let isFirstChunk = true;
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value, { stream: true });
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.substring(6);
+                            try {
+                                const data = JSON.parse(dataStr);
+
+                                if (data.type === 'content') {
+                                    fullText += data.text;
+                                    if (isFirstChunk) {
+                                        updateMessage(assistantMsgDiv, fullText);
+                                        isFirstChunk = false;
+                                    } else {
+                                        updateMessage(assistantMsgDiv, fullText);
+                                    }
+                                } else if (data.type === 'log') {
+                                    // 实时追加日志到控制台
+                                    consoleOutput.textContent += data.text;
+                                    consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                                } else if (data.type === 'done') {
+                                    break;
+                                } else if (data.type === 'error') {
+                                    updateMessage(assistantMsgDiv, '错误: ' + data.text);
+                                    break;
+                                }
+                            } catch (e) {
+                                console.error('解析数据失败:', e);
+                            }
+                        }
                     }
                 }
             } catch (err) {

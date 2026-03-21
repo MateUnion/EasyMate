@@ -1,12 +1,33 @@
+"""
+读取文件内容工具
+允许AI读取指定文件的内容
+"""
+
 from pathlib import Path
 
 def execute(path: str) -> str:
+    """
+    读取文件内容
+
+    Args:
+        path: 文件的完整路径
+
+    Returns:
+        文件内容，如果出错则返回错误信息
+    """
     try:
+        # 解析路径，处理用户目录符号(~)
         p = Path(path).expanduser().resolve()
+
+        # 检查文件是否存在
         if not p.exists():
             return f"错误：文件不存在 - {p}"
+
+        # 检查路径是否为文件
         if not p.is_file():
             return f"错误：路径不是文件 - {p}"
+
+        # 读取文件内容
         with open(p, 'r', encoding='utf-8') as f:
             content = f.read()
         return content
