@@ -12,7 +12,7 @@
         },
         "time": {
           "type": "string",
-          "description": "执行时间，格式建议 'YYYY-MM-DD HH:MM' 或 'HH:MM'（每天重复）。用户可根据需要自行约定格式。"
+          "description": "执行时间，格式建议'HH:MM'（每天重复）。用户可根据需要自行约定格式。"
         }
       },
       "required": ["content", "time"]

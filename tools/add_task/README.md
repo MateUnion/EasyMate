@@ -4,7 +4,7 @@
   ```json
   {
     "content": "任务描述，例如 '提醒我去超市'",
-    "time": "执行时间，格式建议 YYYY-MM-DD HH:MM 或 HH:MM（每天重复）"
+    "time": "执行时间，格式建议HH:MM（每天重复）"
   }
   ```
   - `content`：字符串，任务的具体内容。

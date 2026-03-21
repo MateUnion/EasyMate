@@ -117,12 +117,12 @@ class EasyMate:
         summarize = self.messages[1:idx]
         summarize.append({"role": "user", "content": summarize_guide})
         
+        print("AI概括中...")
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=summarize
         )
-
-        print("AI概括中...")
 
         self.messages = [self.messages[0]] + [{"role": "system", "content": response.choices[0].message.content}] + self.messages[idx:]
         return response.choices[0].message.content
