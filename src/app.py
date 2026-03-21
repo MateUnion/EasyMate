@@ -5,11 +5,13 @@ import time
 import contextlib
 import io
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify
 from agent import EasyMate
 
 app = Flask(__name__)
 app.secret_key = 'EasyMate'
+
+STARTUP_ID = str(int(time.time()))
 
 def load_config():
     with open("./config.json", 'r', encoding='utf-8') as f:
@@ -21,7 +23,6 @@ def save_config(config):
 
 chat_agent = None
 chat_agent_lock = threading.Lock()
-
 tasks_agent = None
 
 def init_agents():
@@ -86,6 +87,10 @@ run_tasks_thread.start()
 def index():
     return render_template('index.html')
 
+@app.route('/session', methods=['GET'])
+def get_session():
+    return jsonify({'startup_id': STARTUP_ID})
+
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.get_json()
@@ -98,6 +103,13 @@ def chat():
         with chat_agent_lock:
             try:
                 answer = chat_agent.input(user_message)
+                try:
+                    summary = chat_agent.get_global_summary()
+                    if summary:
+                        with open("memory.txt", "w", encoding="utf-8") as f:
+                            f.write(summary)
+                except Exception as e:
+                    print(f"保存记忆失败: {e}")
             except Exception as e:
                 answer = f"处理消息时出错: {e}"
     logs = logs_capture.getvalue()

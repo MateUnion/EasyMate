@@ -251,6 +251,45 @@
         const configForm = document.getElementById('config-form');
         const configStatus = document.getElementById('config-status');
 
+        function saveMessagesToLocalStorage() {
+            const messages = [];
+            document.querySelectorAll('.message').forEach(msgDiv => {
+                const role = msgDiv.classList.contains('user') ? 'user' : 'assistant';
+                if (!msgDiv.classList.contains('temp')) {
+                    messages.push({ role, content: msgDiv.textContent });
+                }
+            });
+            localStorage.setItem('chatMessages', JSON.stringify(messages));
+        }
+
+        function loadMessagesFromLocalStorage() {
+            const stored = localStorage.getItem('chatMessages');
+            if (stored) {
+                const messages = JSON.parse(stored);
+                messages.forEach(msg => {
+                    addMessage(msg.role, msg.content);
+                });
+            }
+        }
+
+        function addMessage(role, content, temporary = false) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${role}`;
+            if (temporary) msgDiv.classList.add('temp');
+            msgDiv.textContent = content;
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (!temporary) saveMessagesToLocalStorage();
+            return msgDiv;
+        }
+
+        function updateMessage(msgDiv, content) {
+            msgDiv.textContent = content;
+            msgDiv.classList.remove('temp');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            saveMessagesToLocalStorage();
+        }
+
         navBtns.forEach(btn => {
             btn.addEventListener('click', () => {
                 const page = btn.dataset.page;
@@ -338,24 +377,6 @@
             }
         }
 
-        function addMessage(role, content, temporary = false) {
-            const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${role}`;
-            if (temporary) {
-                msgDiv.classList.add('temp');
-            }
-            msgDiv.textContent = content;
-            chatMessages.appendChild(msgDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-            return msgDiv;
-        }
-
-        function updateMessage(msgDiv, content) {
-            msgDiv.textContent = content;
-            msgDiv.classList.remove('temp');
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
         sendBtn.addEventListener('click', sendMessage);
         messageInput.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'Enter') {
@@ -364,7 +385,26 @@
             }
         });
 
-        loadConfig();
+        async function checkSessionAndClear() {
+            try {
+                const resp = await fetch('/session');
+                const data = await resp.json();
+                const currentId = data.startup_id;
+                const storedId = localStorage.getItem('startup_id');
+                if (storedId !== currentId) {
+                    localStorage.removeItem('chatMessages');
+                    chatMessages.innerHTML = '';
+                    localStorage.setItem('startup_id', currentId);
+                }
+            } catch (err) {
+                console.error('获取会话失败', err);
+            }
+        }
+
+        checkSessionAndClear().then(() => {
+            loadMessagesFromLocalStorage();
+            loadConfig();
+        });
     </script>
 </body>
 </html>
