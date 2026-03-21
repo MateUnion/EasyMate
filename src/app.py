@@ -90,7 +90,7 @@ def save_memory_on_exit():
     global chat_agent
     if chat_agent and len(chat_agent.messages) > 1:
         try:
-            # 总结当前对话并保存（生成器需迭代）
+            # 生成摘要（不使用生成器，直接获取完整字符串）
             summary = ''.join(chat_agent.summarize_msg(len(chat_agent.messages)))
             if summary:
                 with open("memory.txt", "w", encoding="utf-8") as f:
@@ -98,6 +98,9 @@ def save_memory_on_exit():
                 print("已保存记忆到 memory.txt")
             else:
                 print("退出时无法生成摘要（摘要为空）")
+        except KeyboardInterrupt:
+            # 用户手动中断，不保存记忆
+            print("退出时未保存记忆（用户中断）")
         except Exception as e:
             print(f"保存记忆失败: {e}")
 
@@ -278,4 +281,4 @@ if __name__ == '__main__':
     # 初始化智能体
     init_agents()
     # 启动Web服务（127.0.0.1:5000，关闭debug模式以避免生产环境风险）
-    app.run(host='127.0.0.1', port=5000, debug=True, use_reloader=False)
+    app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)

@@ -178,6 +178,7 @@ class EasyMate:
         """
         总结对话内容，用于记忆管理，流式输出摘要。
         """
+        print("AI概括中...")
         to_summarize = self.messages[1:idx]
         to_summarize.append({"role": "user", "content": summarize_guide})
         stream = self.client.chat.completions.create(
