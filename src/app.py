@@ -4,6 +4,7 @@ import threading
 import time
 import contextlib
 import io
+import atexit
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from agent import EasyMate
@@ -48,6 +49,22 @@ def init_agents():
         model=config["model"],
         settings=full_settings
     )
+
+def save_memory_on_exit():
+    global chat_agent
+    if chat_agent and len(chat_agent.messages) > 1:
+        try:
+            summary = chat_agent.summarize_msg(len(chat_agent.messages))
+            if summary:
+                with open("memory.txt", "w", encoding="utf-8") as f:
+                    f.write(summary)
+                print("已保存记忆到 memory.txt")
+            else:
+                print("退出时无法生成摘要（摘要为空）")
+        except Exception as e:
+            print(f"保存记忆失败: {e}")
+
+atexit.register(save_memory_on_exit)
 
 def run_tasks():
     if not hasattr(run_tasks, "_executed"):
@@ -103,13 +120,7 @@ def chat():
         with chat_agent_lock:
             try:
                 answer = chat_agent.input(user_message)
-                try:
-                    summary = chat_agent.get_global_summary()
-                    if summary:
-                        with open("memory.txt", "w", encoding="utf-8") as f:
-                            f.write(summary)
-                except Exception as e:
-                    print(f"保存记忆失败: {e}")
+                chat_agent.memory()
             except Exception as e:
                 answer = f"处理消息时出错: {e}"
     logs = logs_capture.getvalue()

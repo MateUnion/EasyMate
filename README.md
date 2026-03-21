@@ -49,7 +49,7 @@ cp config.example.json config.json
 > 💡 **模型推荐**：推荐 `glm-4.7-flash` 模型，比较聪明，弱智AI发挥不出实力
 
 ### 4. 运行
-如果是windows打开run.bat，macOS打开run.sh即可
+如果是windows打开run.bat，macOS打开run.sh即可，结束的时候在终端Ctrl+C即可
 
 输入你的问题，AI 就会调用工具帮你完成。
 

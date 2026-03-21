@@ -133,6 +133,3 @@ class EasyMate:
             return
         
         self.summarize_msg(11)
-
-    def msgs(self) -> str:
-        return self.messages
