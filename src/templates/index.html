@@ -253,6 +253,34 @@
         const configForm = document.getElementById('config-form');
         const configStatus = document.getElementById('config-status');
 
+        // ---------- 停止按钮相关 ----------
+        let currentAbortController = null;   // 当前请求的 AbortController
+        let isGenerating = false;            // 是否正在生成中
+
+        function setSendButtonToStop() {
+            sendBtn.textContent = '停止';
+            sendBtn.removeEventListener('click', sendMessage);
+            sendBtn.addEventListener('click', stopGeneration);
+        }
+
+        function setSendButtonToSend() {
+            sendBtn.textContent = '发送';
+            sendBtn.removeEventListener('click', stopGeneration);
+            sendBtn.addEventListener('click', sendMessage);
+        }
+
+        function stopGeneration() {
+            if (currentAbortController) {
+                currentAbortController.abort();
+                currentAbortController = null;
+            }
+            setSendButtonToSend();
+            isGenerating = false;
+            // 可选：在聊天框添加一条提示
+            addMessage('assistant', '（已停止生成）');
+        }
+        // ---------- 停止按钮相关结束 ----------
+
         function saveMessagesToLocalStorage() {
             const messages = [];
             document.querySelectorAll('.message').forEach(msgDiv => {
@@ -353,18 +381,30 @@
 
         async function sendMessage() {
             const message = messageInput.value.trim();
-            if (!message) return;
+            if (!message || isGenerating) return;
+
+            isGenerating = true;
             messageInput.value = '';
+
+            // 创建 AbortController
+            currentAbortController = new AbortController();
+            const signal = currentAbortController.signal;
+
+            // 将发送按钮变为停止按钮
+            setSendButtonToStop();
+
+            // 显示用户消息
             addMessage('user', message);
             const assistantMsgDiv = addMessage('assistant', '思考中...', true);
             consoleOutput.textContent = '';
-            consoleDetails.open = true; // 自动展开控制台
+            consoleDetails.open = true;
 
             try {
                 const resp = await fetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: message })
+                    body: JSON.stringify({ message: message }),
+                    signal: signal
                 });
 
                 const reader = resp.body.getReader();
@@ -394,7 +434,6 @@
                                         updateMessage(assistantMsgDiv, fullText);
                                     }
                                 } else if (data.type === 'log') {
-                                    // 实时追加日志到控制台
                                     consoleOutput.textContent += data.text;
                                     consoleOutput.scrollTop = consoleOutput.scrollHeight;
                                 } else if (data.type === 'done') {
@@ -410,11 +449,22 @@
                     }
                 }
             } catch (err) {
-                updateMessage(assistantMsgDiv, '网络错误: ' + err.message);
+                if (err.name === 'AbortError') {
+                    // 用户主动停止，无需额外提示（已添加停止消息）
+                    console.log('用户停止了生成');
+                } else {
+                    updateMessage(assistantMsgDiv, '网络错误: ' + err.message);
+                }
+            } finally {
+                setSendButtonToSend();
+                isGenerating = false;
+                currentAbortController = null;
             }
         }
 
-        sendBtn.addEventListener('click', sendMessage);
+        // 初始化按钮状态
+        setSendButtonToSend();
+
         messageInput.addEventListener('keydown', (e) => {
             if (e.ctrlKey && e.key === 'Enter') {
                 e.preventDefault();

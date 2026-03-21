@@ -100,6 +100,7 @@ class EasyMate:
             stream = self.client.chat.completions.create(
                 model=self.model,
                 messages=self.messages,
+                temperature=0.8,
                 tools=self.tools,
                 tool_choice="auto",
                 stream=True,
