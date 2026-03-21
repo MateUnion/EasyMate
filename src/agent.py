@@ -77,14 +77,18 @@ class EasyMate:
     AI智能体类
     """
 
-    def __init__(self, key: str, url: str, model: str, settings="你是一个有用的AI助手。"):
+    def __init__(self, key: str, url: str, model: str, settings="你是一个有用的AI助手。", max_iterations=100, temperature=0.8, thinking=False, threshold=20):
         self.client = OpenAI(api_key=key, base_url=url)
         self.model = model
         self.settings = f"{guide}\n\n{settings}"
         self.messages = [{"role": "system", "content": self.settings}]
         self.tools = tools_metadata
+        self.max_iterations = max_iterations
+        self.temperature = temperature
+        self.thinking = thinking
+        self.threshold = threshold
 
-    def input(self, msg: str, max_iterations=100):
+    def input(self, msg: str):
         """
         处理用户消息，支持流式输出 AI 回复。
         - 当模型返回文本时，逐字 yield 内容。
@@ -95,21 +99,31 @@ class EasyMate:
         print("AI思考中...")
 
         iteration = 0
-        while iteration < max_iterations:
+        while iteration < self.max_iterations:
             # 先用流式方式调用，收集文本输出和工具调用增量
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                messages=self.messages,
-                temperature=0.8,
-                tools=self.tools,
-                tool_choice="auto",
-                stream=True,
-                extra_body={
-                    "thinking": {
-                        "type": "disabled"
+            if self.thinking == True:
+                stream = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self.messages,
+                    temperature=self.temperature,
+                    tools=self.tools,
+                    tool_choice="auto",
+                    stream=True
+                )
+            else:
+                stream = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self.messages,
+                    temperature=self.temperature,
+                    tools=self.tools,
+                    tool_choice="auto",
+                    stream=True,
+                    extra_body={
+                        "thinking": {
+                            "type": "disabled"
+                        }
                     }
-                }
-            )
+                )
 
             # 用于累积完整的响应
             full_content = ""
@@ -195,11 +209,11 @@ class EasyMate:
         # 更新消息列表
         self.messages = [self.messages[0]] + [{"role": "system", "content": full_summary}] + self.messages[idx:]
 
-    def memory(self, max_iterations=20):
+    def memory(self):
         """
         记忆管理：当消息超过阈值时，自动压缩前10条。
         """
-        if len(self.messages) <= max_iterations:
+        if len(self.messages) <= self.threshold:
             return
         # 消费摘要生成器，完成压缩（忽略输出）
         for _ in self.summarize_msg(11):

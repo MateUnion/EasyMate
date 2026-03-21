@@ -2,5 +2,9 @@
     "api_key": "your-api-key-here",
     "base_url": "http://localhost:11434/v1",
     "model": "qwen2.5:7b",
+    "temperature": 0.8,
+    "thinking": false,
+    "max_iterations": 100,
+    "threshold": 20,
     "settings": "你是一个有用的AI助手。"
 }

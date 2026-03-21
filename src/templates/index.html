@@ -233,6 +233,14 @@
                 <input type="text" id="base_url" name="base_url">
                 <label>模型名称</label>
                 <input type="text" id="model" name="model">
+                <label>温度</label>
+                <input type="number" id="temperature" name="temperature" step="0.1" min="0" max="1" value="0.8">
+                <label>深度思考</label>
+                <input type="checkbox" id="thinking" name="thinking">
+                <label>最大迭代次数</label>
+                <input type="number" id="max_iterations" name="max_iterations" min="1" max="500" value="100">
+                <label>记忆压缩阈值</label>
+                <input type="number" id="threshold" name="threshold" min="1" max="100" value="20">
                 <label>系统设置</label>
                 <textarea id="settings" name="settings" rows="6"></textarea>
                 <button type="submit">保存配置</button>

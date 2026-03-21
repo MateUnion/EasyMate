@@ -5,6 +5,7 @@ Flask Web应用模块
 
 import os
 import json
+import queue
 import threading
 import time
 import atexit
@@ -47,39 +48,47 @@ chat_agent_lock = threading.Lock()  # 用于线程安全的锁
 tasks_agent = None
 
 def init_agents():
-    """
-    初始化AI智能体
-    加载配置文件和记忆，创建聊天智能体和任务智能体实例
-    """
-    global chat_agent, tasks_agent
+    global chat_agent, tasks_agent, last_config_mtime
     config = load_config()
-
-    # 尝试加载之前的记忆
+    last_config_mtime = os.path.getmtime("./config.json")
+    
+    temperature = config.get("temperature", 0.8)
+    thinking = config.get("thinking", False)
+    max_iterations = config.get("max_iterations", 100)
+    threshold = config.get("threshold", 20)
+    
     pre_memory = ""
     try:
         with open("memory.txt", "r", encoding="utf-8") as f:
             pre_memory = f.read()
     except:
         pass
-
-    # 合并配置和记忆
-    settings = config.get("settings", "")
+    
+    settings = config.get("settings", "你是一个有用的AI助手。")
     full_settings = f"{settings}\n\n{pre_memory}" if pre_memory else settings
-
-    # 创建聊天智能体
+    
+    # 聊天智能体
     chat_agent = EasyMate(
         key=config["api_key"],
         url=config["base_url"],
         model=config["model"],
-        settings=full_settings
+        settings=full_settings,
+        max_iterations=max_iterations,
+        temperature=temperature,
+        thinking=thinking,
+        threshold=threshold
     )
-
-    # 创建任务智能体（用于定时任务执行）
+    
+    # 任务智能体
     tasks_agent = EasyMate(
         key=config["api_key"],
         url=config["base_url"],
         model=config["model"],
-        settings=full_settings
+        settings=full_settings,
+        max_iterations=max_iterations,
+        temperature=temperature,
+        thinking=thinking,
+        threshold=threshold
     )
 
 def save_memory_on_exit():
@@ -189,7 +198,6 @@ def chat():
         # 用于兼容原逻辑的缓冲区（实际不再发送，仅用于写入）
         sio = io.StringIO()
         # 引入队列用于实时日志
-        import queue
         log_q = queue.Queue()
 
         # 自定义输出流：每个 print 同时写入原缓冲区和实时队列
