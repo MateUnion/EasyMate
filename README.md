@@ -8,7 +8,7 @@ EasyMate 是一个轻量级的 AI 智能体框架，基于大模型（如 Ollama
 
 ## ✨ 核心特性
 
-- 🛠️ **丰富的内置工具**：`time`、`read`、`write`、`command`、`search`、`similarity`、`add_task`、`del_task`、**`ett`（多模态理解）** 等，支持自由扩展
+- 🛠️ 丰富的内置工具：`time`、`read`、`write`、`command`、`search`、`similarity`、`add_task`、`del_task`、`ett（多模态理解）`、`beijing_subway（北京地铁换乘）`等，支持自由扩展
 - 🧠 **智能记忆**：自动压缩历史对话，生成长期记忆，跨会话保留用户偏好与重要信息
 - ⏰ **定时任务**：后台线程运行，支持每天重复任务，让 AI 在指定时间自动执行指令
 - 🔒 **安全第一**：`command` 工具禁止直接删除文件，自动提示改用移动操作，高风险操作可配置审批
@@ -114,6 +114,7 @@ cd EasyMate
 | `add_task` | 添加定时任务 | 参数：`content`（任务描述）、`time`（格式 `HH:MM`） |
 | `del_task` | 删除定时任务 | 按 ID 删除，自动重排剩余任务 ID |
 | `ett` | 多模态理解 | 分析图片、视频、文档（Word/Excel/PDF）等，返回文字描述。依赖智谱 GLM-4.6V-Flash，支持公网 URL 或本地文件（自动转 base64）。 |
+| `beijing_subway` | 北京地铁换乘规划 | 输入起点和终点站名，返回最优换乘方案（考虑早晚高峰速度）。需将 `station.json` 和 `graph.txt` 放入 `tools/beijing_subway/` 目录，并安装 `geopy` 库。 |
 
 **说明**：
 - 所有工具均已集成到 EasyMate 的工具系统中，AI 会根据用户指令自动调用。
