@@ -1,11 +1,7 @@
 # Copyright (C) 2026 xhdlphzr
-#
 # This file is part of EasyMate.
-#
 # EasyMate is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version.
-#
 # EasyMate is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-#
 # You should have received a copy of the GNU General Public License along with EasyMate.  If not, see <https://www.gnu.org/licenses/>.
 
 """
@@ -15,8 +11,10 @@ Agent模块 - AI智能体核心实现
 
 import json
 import sys
+import threading
 from pathlib import Path
 from openai import OpenAI
+from mcps import MCPScanner
 
 # 导入工具系统
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -90,13 +88,117 @@ class EasyMate:
     def __init__(self, key: str, url: str, model: str, settings="你是一个有用的AI助手。", max_iterations=100, temperature=0.8, thinking=False, threshold=20):
         self.client = OpenAI(api_key=key, base_url=url)
         self.model = model
-        self.settings = f"{settings}\n\n---\n\n{guide}"
-        self.messages = [{"role": "system", "content": self.settings}]
-        self.tools = tools_metadata
+        self.user_settings = settings
+
+        # 复制内置工具数据到实例属性（便于动态添加）
+        self.tools_metadata = list(tools_metadata)
+        self.tool_functions = dict(tool_functions)
+        self.tools = self.tools_metadata
+
+        # 构建初始系统提示（不含 MCP 工具）
+        base_prompt = f"{guide}\n\n---\n\n{settings}"
+        self.messages = [{"role": "system", "content": base_prompt}]
+
+        # 其他实例属性
         self.max_iterations = max_iterations
         self.temperature = temperature
         self.thinking = thinking
         self.threshold = threshold
+
+        # ---------- 后台自动扫描 MCP 服务器 ----------
+        # 加载黑名单
+        config_path = Path(__file__).parent.parent / "config.json"
+        blacklist = []
+        if config_path.exists():
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    blacklist = config.get("mcps", [])
+            except Exception as e:
+                print(f"读取配置文件失败: {e}")
+
+        # 用于保护共享数据的锁
+        self._mcp_lock = threading.Lock()
+
+        def background_scan():
+            scanner = MCPScanner()
+            print("后台开始扫描 MCP 服务器... （需要10秒，请稍后）")
+            try:
+                discovered = scanner.scan()   # 返回 [{"url": "...", "tool": {...}}, ...]
+            except Exception as e:
+                print(f"后台扫描失败: {e}")
+                return
+
+            if not discovered:
+                print("后台扫描未发现 MCP 服务器")
+                return
+
+            # 过滤掉黑名单中的服务器
+            filtered = [item for item in discovered if item["url"] not in blacklist]
+            if not filtered:
+                print("所有发现的服务器均在黑名单中，无工具注册")
+                return
+
+            print(f"后台扫描发现 {len(filtered)} 个 MCP 工具（已过滤黑名单）")
+            new_desc = []
+            with self._mcp_lock:
+                for item in filtered:
+                    url = item["url"]
+                    tool = item["tool"]
+                    name = tool["function"]["name"]
+
+                    # 避免工具名冲突（先发现的优先，MCPScanner 已按工具名去重，但这里再检查一次）
+                    if name in self.tool_functions:
+                        print(f"⚠️ 工具 {name} 已存在，跳过来自 {url} 的同名工具")
+                        continue
+
+                    # 创建包装函数
+                    def make_wrapper(server_url, tool_name):
+                        def wrapper(**kwargs):
+                            import requests
+                            payload = {
+                                "jsonrpc": "2.0",
+                                "method": "tools/call",
+                                "params": {"name": tool_name, "arguments": kwargs},
+                                "id": 1
+                            }
+                            try:
+                                resp = requests.post(server_url, json=payload, timeout=30)
+                                resp.raise_for_status()
+                                data = resp.json()
+                                if "error" in data:
+                                    return f"调用失败: {data['error']}"
+                                result = data.get("result")
+                                return str(result) if result is not None else "执行成功"
+                            except Exception as e:
+                                return f"调用失败: {e}"
+                        return wrapper
+
+                    self.tool_functions[name] = make_wrapper(url, name)
+                    self.tools_metadata.append(tool)
+
+                    # 生成自然语言描述
+                    desc = tool["function"]["description"]
+                    params = tool["function"].get("parameters", {}).get("properties", {})
+                    param_str = ", ".join([f"{k} ({v.get('type','any')})" for k, v in params.items()])
+                    if param_str:
+                        desc += f" 参数：{param_str}。"
+                    new_desc.append(f"- {name}（来自 {url}）：{desc}")
+                    print(f"  后台注册工具: {name} (来自 {url})")
+
+                if new_desc:
+                    # 更新系统提示
+                    current_system = self.messages[0]["content"]
+                    if "## 外部 MCP 工具" in current_system:
+                        current_system = current_system.rstrip()
+                        new_system = current_system + "\n" + "\n".join(new_desc)
+                    else:
+                        new_system = current_system + "\n\n## 外部 MCP 工具\n" + "\n".join(new_desc)
+                    self.messages[0]["content"] = new_system
+
+        # 启动后台线程（守护线程，随主程序退出）
+        thread = threading.Thread(target=background_scan, daemon=True)
+        thread.start()
 
     def input(self, msg: str):
         """
@@ -180,7 +282,7 @@ class EasyMate:
             for tool_call in tool_calls_data.values():
                 func_name = tool_call["function"]["name"]
                 arguments = json.loads(tool_call["function"]["arguments"])
-                func = tool_functions.get(func_name)
+                func = self.tool_functions.get(func_name)
                 if func:
                     result = func(**arguments)
                     print(f"使用工具 {func_name}，参数 {arguments}，调用结果 “{result}”")

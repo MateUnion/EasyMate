@@ -17,5 +17,6 @@
             "max_iterations": 100,
             "max_retries": 20
         }
-    }
+    },
+    "mcps": []
 }

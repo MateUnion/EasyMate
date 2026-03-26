@@ -1,11 +1,7 @@
 # Copyright (C) 2026 xhdlphzr
-#
 # This file is part of EasyMate.
-#
 # EasyMate is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version.
-#
 # EasyMate is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
-#
 # You should have received a copy of the GNU General Public License along with EasyMate.  If not, see <https://www.gnu.org/licenses/>.
 
 """
@@ -24,6 +20,7 @@ import io
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from agent import EasyMate
+from mcps import MCPScanner
 
 # 创建Flask应用实例
 app = Flask(__name__)
@@ -294,6 +291,28 @@ def update_config():
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/mcp/scan', methods=['GET'])
+def scan_mcp():
+    """
+    扫描局域网内的 MCP 服务器，返回简化的服务器列表供前端选择
+    """
+    try:
+        scanner = MCPScanner()
+        servers = scanner.scan()   # 返回 [{"url": "...", "tools": [...]}, ...]
+        result = []
+        for s in servers:
+            # 提取工具名称前三个作为示例
+            tool_names = [t["function"]["name"] for t in s["tools"]]
+            result.append({
+                "url": s["url"],
+                "name": s.get("name", s["url"]),   # 如果有名称字段更好，否则用 URL
+                "tools_count": len(s["tools"]),
+                "tools": tool_names[:3]            # 只展示前三个工具名
+            })
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     # 初始化智能体
