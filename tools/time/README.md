@@ -1,3 +1,11 @@
+<!--
+Copyright (C) 2026 xhdlphzr
+This file is part of FranxAI.
+FranxAI is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or any later version.
+FranxAI is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more details.
+You should have received a copy of the GNU General Public License along with FranxAI.  If not, see <https://www.gnu.org/licenses/>.
+-->
+
 ### `time` — 获取当前日期和时间
 - **用途**：当你需要知道当前的日期、时间、星期几，或者计算时间间隔时使用。
 - **输入**：不需要任何参数。
