@@ -20,8 +20,11 @@ from mcps import MCPStdioClient
 
 # 导入工具系统
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from tools import tools_metadata, tool_functions, readmes_combined
+from tools import tools_metadata, readmes_combined
 from tools import tools as builtin_tools
+
+# 导入技能系统
+from skills import skills_readme
 
 # 用户指南：说明如何正确调用工具
 user_guide = r"""
@@ -72,7 +75,7 @@ user_guide = r"""
 """
 
 # 将工具的README和用户指南合并
-guide = f"{readmes_combined}\n\n---\n\n{user_guide}"
+guide = f"{readmes_combined}\n\n{skills_readme}\n\n---\n\n{user_guide}"
 
 # 摘要指南：说明如何总结对话内容
 summarize_guide = r"""
