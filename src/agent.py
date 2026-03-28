@@ -20,8 +20,7 @@ from mcps import MCPStdioClient
 
 # 导入工具系统
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from tools import tools_metadata, readmes_combined
-from tools import tools as builtin_tools
+from tools import tools_metadata, tool_functions, readmes_combined
 
 # 导入技能系统
 from skills import skills_readme
@@ -104,7 +103,7 @@ class FranxAI:
         self.user_settings = settings
         self.user_guide = user_guide
 
-        self.builtin_tools = builtin_tools
+        self.builtin_tools = tool_functions["tools"]
 
         # 存储 MCP 工具的函数映射（键为 "服务器名/工具名"）
         self.mcp_tools = {}
