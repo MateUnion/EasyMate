@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from agent import FranxAI
+import markdown
 
 # 创建Flask应用实例
 app = Flask(__name__)
@@ -192,7 +193,6 @@ def execute_task(task_id, content, cancel_event):
         with active_tasks_lock:
             if task_id in active_tasks:
                 del active_tasks[task_id]
-# ---------- 新增结束 ----------
 
 def run_tasks():
     """
@@ -292,10 +292,14 @@ def chat():
         # 重定向标准输出到自定义流
         sys.stdout = QueueStream()
 
+        # 累积完整回复
+        full_response = ""
+
         try:
             with chat_agent_lock:
                 # 流式输出 AI 回复（原有逻辑）
                 for chunk in chat_agent.input(user_message):
+                    full_response += chunk
                     yield f"data: {json.dumps({'type': 'content', 'text': chunk})}\n\n"
                     # 每次输出回复后，立即将队列中的日志实时发送
                     while True:
@@ -313,6 +317,16 @@ def chat():
         finally:
             # 恢复原始标准输出
             sys.stdout = old_stdout
+
+        # 完整消息渲染为 HTML（后端渲染）
+        if full_response:
+            try:
+                # 使用 markdown 库将 Markdown 转为 HTML
+                html = markdown.markdown(full_response)
+                yield f"data: {json.dumps({'type': 'html', 'html': html})}\n\n"
+            except Exception as e:
+                # 渲染失败，发送错误但不中断流
+                yield f"data: {json.dumps({'type': 'error', 'text': f'Markdown渲染失败: {str(e)}'})}\n\n"
 
         # 发送流结束信号
         yield f"data: {json.dumps({'type': 'done'})}\n\n"

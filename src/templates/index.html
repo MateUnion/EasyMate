@@ -12,6 +12,18 @@ You should have received a copy of the GNU General Public License along with Fra
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FranxAI 聊天助手</title>
+    <!-- KaTeX 在线资源 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/contrib/auto-render.min.js"
+        onload="renderMathInElement(document.body, {
+            delimiters: [
+                {left: '$$', right: '$$', display: true},
+                {left: '$', right: '$', display: false}
+            ]
+        });"></script>
+    <!-- Markdown 解析库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -114,6 +126,16 @@ You should have received a copy of the GNU General Public License along with Fra
         .message.temp {
             opacity: 0.7;
             font-style: italic;
+        }
+        /* 为渲染后的 Markdown 添加段落间距 */
+        .message p {
+            margin: 0.5em 0;
+        }
+        .message p:first-child {
+            margin-top: 0;
+        }
+        .message p:last-child {
+            margin-bottom: 0;
         }
 
         .chat-input-area {
@@ -424,7 +446,6 @@ You should have received a copy of the GNU General Public License along with Fra
             }
             setSendButtonToSend();
             isGenerating = false;
-            // 可选：在聊天框添加一条提示
             addMessage('assistant', '（已停止生成）');
         }
         // ---------- 停止按钮相关结束 ----------
@@ -434,6 +455,7 @@ You should have received a copy of the GNU General Public License along with Fra
             document.querySelectorAll('.message').forEach(msgDiv => {
                 const role = msgDiv.classList.contains('user') ? 'user' : 'assistant';
                 if (!msgDiv.classList.contains('temp')) {
+                    // 存储纯文本（原始内容），而不是渲染后的 HTML
                     messages.push({ role, content: msgDiv.textContent });
                 }
             });
@@ -445,16 +467,39 @@ You should have received a copy of the GNU General Public License along with Fra
             if (stored) {
                 const messages = JSON.parse(stored);
                 messages.forEach(msg => {
-                    addMessage(msg.role, msg.content);
+                    // 用户消息需要解析 Markdown，助手消息直接纯文本（后续由 html 事件覆盖）
+                    if (msg.role === 'user') {
+                        addMessage(msg.role, msg.content, false, '', true);
+                    } else {
+                        addMessage(msg.role, msg.content);
+                    }
                 });
             }
         }
 
-        function addMessage(role, content, temporary = false, extraClass = '') {
+        // 添加消息，支持可选 Markdown 解析
+        function addMessage(role, content, temporary = false, extraClass = '', parseMarkdown = false) {
             const msgDiv = document.createElement('div');
             msgDiv.className = `message ${role} ${extraClass}`;
             if (temporary) msgDiv.classList.add('temp');
-            msgDiv.textContent = content;
+
+            if (parseMarkdown && !temporary) {
+                // 解析 Markdown 并转成 HTML
+                const html = marked.parse(content);
+                msgDiv.innerHTML = html;
+                // 渲染数学公式
+                if (window.renderMathInElement) {
+                    window.renderMathInElement(msgDiv, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false}
+                        ]
+                    });
+                }
+            } else {
+                msgDiv.textContent = content;
+            }
+
             chatMessages.appendChild(msgDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
             if (!temporary) saveMessagesToLocalStorage();
@@ -753,11 +798,14 @@ You should have received a copy of the GNU General Public License along with Fra
             // 将发送按钮变为停止按钮
             setSendButtonToStop();
 
-            // 显示用户消息
-            addMessage('user', message);
+            // 用户消息：启用 Markdown 解析
+            addMessage('user', message, false, '', true);
             const assistantMsgDiv = addMessage('assistant', '思考中...', true);
             consoleOutput.textContent = '';
             consoleDetails.open = true;
+
+            let fullText = '';
+            let isFirstChunk = true;
 
             try {
                 const resp = await fetch('/chat', {
@@ -769,8 +817,6 @@ You should have received a copy of the GNU General Public License along with Fra
 
                 const reader = resp.body.getReader();
                 const decoder = new TextDecoder();
-                let fullText = '';
-                let isFirstChunk = true;
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -796,6 +842,19 @@ You should have received a copy of the GNU General Public License along with Fra
                                 } else if (data.type === 'log') {
                                     consoleOutput.textContent += data.text;
                                     consoleOutput.scrollTop = consoleOutput.scrollHeight;
+                                } else if (data.type === 'html') {
+                                    assistantMsgDiv.innerHTML = data.html;
+                                    assistantMsgDiv.classList.remove('temp');
+                                    // 渲染数学公式
+                                    if (window.renderMathInElement) {
+                                        window.renderMathInElement(assistantMsgDiv, {
+                                            delimiters: [
+                                                {left: '$$', right: '$$', display: true},
+                                                {left: '$', right: '$', display: false}
+                                            ]
+                                        });
+                                    }
+                                    saveMessagesToLocalStorage();
                                 } else if (data.type === 'done') {
                                     break;
                                 } else if (data.type === 'error') {
@@ -809,10 +868,7 @@ You should have received a copy of the GNU General Public License along with Fra
                     }
                 }
             } catch (err) {
-                if (err.name === 'AbortError') {
-                    // 用户主动停止，无需额外提示（已添加停止消息）
-                    console.log('用户停止了生成');
-                } else {
+                if (err.name !== 'AbortError') {
                     updateMessage(assistantMsgDiv, '网络错误: ' + err.message);
                 }
             } finally {
