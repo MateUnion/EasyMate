@@ -299,18 +299,17 @@ def chat():
         # 累积完整回复
         full_response = ""
 
-        # ---------- 新增：检索知识并发送到前端 ----------
+        # ---------- 检索知识并发送到前端 ----------
         try:
             # 从 agent 获取 knowledge_k，如果不存在则默认 1
             k = getattr(chat_agent, 'knowledge_k', 1)
             relevant = search(user_message, k=k)
             for item in relevant:
                 # 每条知识单独发送一个 knowledge 事件
-                yield f"data: {json.dumps({'type': 'knowledge', 'text': item['text']})}\n\n"
+                yield f"data: {json.dumps({'type': 'knowledge', 'text': item})}\n\n"
         except Exception as e:
             # 检索失败不影响主流程，仅打印日志
             print(f"知识检索失败: {e}")
-        # ------------------------------------------------
 
         try:
             with chat_agent_lock:

@@ -230,8 +230,14 @@ if _need_rebuild():
     _rebuild_vector_db()
 
 # ---------- 5. 检索接口 ----------
-def search(query: str, k: int = 1):
-    """检索与 query 最相似的 k 条知识"""
+def search(query: str, k: int = 1, step: int = 1, rtn: list = []):
+    """检索与 query 最相似的 k 条知识（自动去重）"""
+    if rtn is None:
+        rtn = []
+
+    if step > k:
+        return rtn
+
     conn = sqlite3.connect(VECTOR_DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT text, embedding FROM vectors")
@@ -251,7 +257,20 @@ def search(query: str, k: int = 1):
         sim = dot / (norm_q * norm_d) if norm_q * norm_d != 0 else 0
         scores.append((sim, text))
     scores.sort(reverse=True, key=lambda x: x[0])
-    return [{'text': t} for _, t in scores[:k]]
+
+    selected = None
+    for sim, text in scores:
+        if text not in rtn:
+            selected = (sim, text)
+            break
+    if selected is None:
+        return rtn
+
+    rtn.append(selected[1])
+    ans = ""
+    for i in rtn:
+        ans += f"\n\n{i}"
+    return search(query + ans, k, step + 1, rtn)
 
 # ---------- 6. 统一工具调用（内置 + MCP） ----------
 def tools(tool_name: str, arguments: dict = None) -> str:

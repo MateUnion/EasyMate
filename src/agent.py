@@ -132,7 +132,7 @@ class FranxAI:
         if not relevant:
             return self.base_messages[0]["content"]
 
-        knowledge_text = "\n\n".join([item['text'] for item in relevant])
+        knowledge_text = "\n\n".join(relevant)
         return self.base_messages[0]["content"] + f"\n\n## 相关内容\n{knowledge_text}"
 
     def input(self, msg: str):
