@@ -104,7 +104,10 @@
 - 删除 `session_histories` 及退出时批量写入逻辑，简化代码。
 
 ## [v4.3.0](https://github.com/xhdlphzr/FranxAI/releases/tag/v4.3.0)
-- 项目全面国际化：所有注释、日志、内部提示完全英文化
+- 项目全面国际化：所有注释、日志、内部提示完全英文化。
 
 ## [v4.4.0](https://github.com/xhdlphzr/FranxAI/releases/tag/v4.4.0)
 - 为向量检索增加了基于类型的权重：工具文档（type='tool'）权重为 1.0，技能（type='skill'）为 0.8，对话记忆（type='conversation'）为 0.2。这一改进优先返回可操作的工具，降低背景知识和对话历史噪音，提升检索相关性。
+
+## [v4.4.1](https://github.com/xhdlphzr/FranxAI/releases/tag/v4.4.1)
+- 减少冗余记忆，解决i18n遗留bug。

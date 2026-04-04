@@ -348,7 +348,7 @@ def add_conversation(user_msg: str, ai_msg: str):
     """
     Dynamically insert a round of Q&A into the vector library (takes effect in real time), and back up to the knowledge/memories/ directory | 将一轮问答动态插入向量库（实时生效），同时备份到 knowledge/memories/ 目录
     """
-    text = f"User: {user_msg}\nAI: {ai_msg} | 用户：{user_msg}\nAI：{ai_msg}"
+    text = f"User | 用户: {user_msg}\nAI: {ai_msg}"
     # Insert into vector library | 插入向量库
     _add_document(text, source=f"conv_{int(time.time())}", doc_type="conversation")
 
