@@ -17,11 +17,19 @@ import time
 import sys
 import io
 import uuid
-from datetime import datetime
+import base64
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from functools import wraps
+from pycloudflared import try_cloudflare
 from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from agent import FranxAI
 import markdown
+import bcrypt
+import jwt
+import secrets
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from knowledge import search, add_conversation
@@ -53,10 +61,101 @@ def save_config(config):
     with open("./config.json", 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
 
+# ========== Authentication helpers | 认证辅助函数 ==========
+PRIVATE_KEY_FILE = "private.key"
+PUBLIC_KEY_FILE = "public.key"
+
+def generate_rsa_keys():
+    """Generate RSA key pair and save to files | 生成 RSA 密钥对并保存到文件"""
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_key = private_key.public_key()
+    with open(PRIVATE_KEY_FILE, "wb") as f:
+        f.write(private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+    with open(PUBLIC_KEY_FILE, "wb") as f:
+        f.write(public_key.public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo
+        ))
+    if os.name != 'nt':
+        os.chmod(PRIVATE_KEY_FILE, 0o600)
+    print("✅ Generated RSA key pair. | 已生成 RSA 密钥对。")
+
+def load_private_key():
+    with open(PRIVATE_KEY_FILE, "rb") as f:
+        return serialization.load_pem_private_key(f.read(), password=None)
+
+def load_public_key_pem():
+    with open(PUBLIC_KEY_FILE, "r") as f:
+        return f.read()
+
+def generate_jwt_token():
+    config = load_config()
+    secret = config.get("jwt_secret")
+    if not secret:
+        secret = secrets.token_urlsafe(32)
+        config["jwt_secret"] = secret
+        save_config(config)
+    expire_hours = 1
+    now = datetime.now(timezone.utc)
+    payload = {
+        "exp": now + timedelta(hours=expire_hours),
+        "iat": now,
+    }
+    return jwt.encode(payload, secret, algorithm="HS256")
+
+def verify_jwt_token(token):
+    config = load_config()
+    secret = config.get("jwt_secret")
+    if not secret:
+        return False
+    try:
+        jwt.decode(token, secret, algorithms=["HS256"])
+        return True
+    except jwt.InvalidTokenError:
+        return False
+
+def login_required(f):
+    """Decorator to protect routes that require authentication | 保护需要认证的路由的装饰器"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        config = load_config()
+        # If no password has been set yet, allow access (frontend will guide setup) | 如果尚未设置密码，允许访问（前端会引导设置）
+        if "password_hash" not in config:
+            return f(*args, **kwargs)
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+        if not token or not verify_jwt_token(token):
+            return jsonify({'error': 'Unauthorized | 未授权'}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+# Initialize RSA keys on first run | 首次运行时生成 RSA 密钥对
+if not os.path.exists(PRIVATE_KEY_FILE) or not os.path.exists(PUBLIC_KEY_FILE):
+    generate_rsa_keys()
+
+# Original global variables and functions | 原始全局变量和函数
 # Global variables: chat agent and task agent | 全局变量：聊天智能体和任务智能体
 chat_agent = None
 chat_agent_lock = threading.Lock()  # Thread safety lock | 用于线程安全的锁
 tasks_agent = None
+_public_url = None
+
+# Start Cloudflare tunnel in a background thread and get the public URL | 在后台线程中启动 Cloudflare 隧道并获取公网 URL
+def start_cloudflare_tunnel():
+    """Start a Cloudflare tunnel in a background thread and get the public URL | 在后台线程中启动 Cloudflare 隧道并获取公网 URL"""
+    global _public_url
+    try:
+        # 1. Start a temporary tunnel | 1. 启动临时隧道
+        tunnel = try_cloudflare(port=5000)
+        
+        # 2. Get the public address | 2. 获取公网地址
+        _public_url = tunnel
+        print(f"✅ Cloudflare tunnel started | Cloudflare隧道已启动：{_public_url}")
+    except Exception as e:
+        print(f"❌ Failed to start Cloudflare tunnel | 启动Cloudflare隧道失败：{e}")
 
 # Scheduled task SSE broadcaster | 定时任务 SSE 广播器
 class EventBroadcaster:
@@ -101,7 +200,7 @@ def init_agents():
     threshold = config.get("threshold", 20)
     knowledge_k = config.get("knowledge_k", 1)
     
-    settings = config.get("settings", "你是一个有用的AI助手。")
+    settings = config.get("settings", "You are a helpful AI assistant. 你是一个有用的AI助手。")
     
     # Chat agent | 聊天智能体
     chat_agent = FranxAI(
@@ -218,6 +317,90 @@ def run_tasks():
 run_tasks_thread = threading.Thread(target=run_tasks, daemon=True)
 run_tasks_thread.start()
 
+# Authentication API endpoints | 认证 API 端点
+@app.route('/api/public-key', methods=['GET'])
+def get_public_key():
+    """Return RSA public key in PEM format | 返回 PEM 格式的 RSA 公钥"""
+    return jsonify({'public_key': load_public_key_pem()})
+
+@app.route('/api/setup', methods=['POST'])
+def setup_password():
+    """First-time password setup (RSA encrypted) | 首次设置密码（RSA 加密传输）"""
+    config = load_config()
+    if "password_hash" in config:
+        return jsonify({'error': 'Password already set | 密码已设置'}), 400
+    data = request.get_json()
+    encrypted_password = data.get('password')
+    if not encrypted_password:
+        return jsonify({'error': 'Missing password | 缺少密码'}), 400
+    private_key = load_private_key()
+    try:
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives import hashes
+        decrypted = private_key.decrypt(
+            base64.b64decode(encrypted_password),
+            padding.PKCS1v15()
+        )
+        password = decrypted.decode()
+    except Exception as e:
+        return jsonify({'error': f'Decryption failed | 解密失败: {e}'}), 400
+    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+    config["password_hash"] = hashed.decode()
+    if "jwt_secret" not in config:
+        config["jwt_secret"] = secrets.token_urlsafe(32)
+    save_config(config)
+    token = generate_jwt_token()
+    return jsonify({'status': 'success', 'token': token})
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    """Login and return JWT token | 登录并返回 JWT token"""
+    config = load_config()
+    if "password_hash" not in config:
+        return jsonify({'error': 'Password not set | 密码未设置'}), 400
+    data = request.get_json()
+    encrypted_password = data.get('password')
+    if not encrypted_password:
+        return jsonify({'error': 'Missing password | 缺少密码'}), 400
+    private_key = load_private_key()
+    try:
+        from cryptography.hazmat.primitives.asymmetric import padding
+        decrypted = private_key.decrypt(
+            base64.b64decode(encrypted_password),
+            padding.PKCS1v15()
+        )
+        password = decrypted.decode()
+    except Exception as e:
+        return jsonify({'error': f'Decryption failed | 解密失败: {e}'}), 400
+    stored_hash = config["password_hash"].encode()
+    if bcrypt.checkpw(password.encode(), stored_hash):
+        token = generate_jwt_token()
+        return jsonify({'status': 'success', 'token': token})
+    else:
+        return jsonify({'error': 'Invalid password | 密码错误'}), 401
+
+@app.route('/api/check-auth', methods=['GET'])
+def check_auth():
+    """Check if password is set and if current token is valid | 检查密码是否已设置以及当前 token 是否有效"""
+    config = load_config()
+    password_set = "password_hash" in config
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    valid = False
+    if token and password_set:
+        valid = verify_jwt_token(token)
+    return jsonify({'password_set': password_set, 'authenticated': valid})
+
+# Frontend routes | 前端路由
+@app.route('/login')
+def login_page():
+    """Login page | 登录页面"""
+    return render_template('login.html')
+
+@app.route('/register')
+def register_page():
+    """Register page (first-time password setup) | 注册页面（首次设置密码）"""
+    return render_template('register.html')
+
 @app.route('/')
 def index():
     """
@@ -241,6 +424,7 @@ def get_session():
     return jsonify({'startup_id': STARTUP_ID})
 
 @app.route('/chat', methods=['POST'])
+@login_required
 def chat():
     data = request.get_json()
     user_message = data.get('message', '').strip()
@@ -282,7 +466,7 @@ def chat():
 
         try:
             with chat_agent_lock:
-                # Stream AI reply (original logic) | 流式输出 AI 回复（原有逻辑）
+                # Stream AI reply (original logic) | 流式输出 AI 回复
                 for chunk in chat_agent.input(user_message):
                     full_response += chunk
                     yield f"data: {json.dumps({'type': 'content', 'text': chunk})}\n\n"
@@ -294,7 +478,7 @@ def chat():
                                 yield f"data: {json.dumps({'type': 'log', 'text': line})}\n\n"
                         except queue.Empty:
                             break
-                # Memory compression (original logic) | 记忆压缩（原有逻辑）
+                # Memory compression (original logic) | 记忆压缩
                 chat_agent.memory()
         except Exception as e:
             # Error handling | 错误处理
@@ -330,6 +514,7 @@ def chat():
     )
 
 @app.route('/config', methods=['GET'])
+@login_required
 def get_config():
     """
     Get configuration interface | 获取配置接口
@@ -346,6 +531,7 @@ def get_config():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/config', methods=['POST'])
+@login_required
 def update_config():
     """
     Update configuration interface | 更新配置接口
@@ -372,6 +558,7 @@ def update_config():
 
 # Scheduled task management API | 定时任务管理接口
 @app.route('/tasks', methods=['GET', 'POST'])
+@login_required
 def tasks_api():
     """
     Scheduled task management API | 定时任务管理接口
@@ -435,6 +622,7 @@ def tasks_api():
 
 # SSE event stream | SSE 事件流
 @app.route('/events')
+@login_required
 def events():
     """Server-Sent Events endpoint for pushing scheduled task real-time status | Server-Sent Events 端点，用于推送定时任务实时状态"""
     def generate():
@@ -460,6 +648,7 @@ def events():
 
 # Cancel task API | 取消任务接口
 @app.route('/cancel_task/<task_id>', methods=['POST'])
+@login_required
 def cancel_task(task_id):
     """Cancel a running task | 取消正在执行的任务"""
     with active_tasks_lock:
@@ -472,5 +661,8 @@ def cancel_task(task_id):
 if __name__ == '__main__':
     # Initialize agents | 初始化智能体
     init_agents()
+    # Start Cloudflare tunnel in a background thread | 在后台线程中启动 Cloudflare 隧道
+    tunnel_thread = threading.Thread(target=start_cloudflare_tunnel, daemon=True)
+    tunnel_thread.start()
     # Start web service (127.0.0.1:5000, debug=False to avoid production risks) | 启动Web服务（127.0.0.1:5000，关闭debug模式以避免生产环境风险）
     app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)

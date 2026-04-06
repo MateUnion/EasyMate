@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>Set Password | FranxAI</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsencrypt/3.3.2/jsencrypt.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .register-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            padding: 40px;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+        }
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 0.9rem;
+        }
+        input {
+            width: 100%;
+            padding: 12px 16px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        input:focus {
+            border-color: #667eea;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #5a67d8;
+        }
+        .error {
+            color: #e53e3e;
+            margin-top: 12px;
+            font-size: 14px;
+        }
+        .info {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+        a {
+            color: #667eea;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-container">
+        <h1>🤖 FranxAI Chat Assistant</h1>
+        <div class="subtitle">FranxAI 聊天助手</div>
+        <input type="password" id="password" placeholder="Password | 密码" autocomplete="new-password">
+        <input type="password" id="confirmPassword" placeholder="Confirm password | 确认密码" autocomplete="new-password">
+        <button id="registerBtn">Set Password | 设置密码</button>
+        <div id="errorMsg" class="error"></div>
+        <div class="info">
+            <a href="/login">Already have a password? Login | 已有密码？登录</a>
+        </div>
+    </div>
+
+    <script>
+        const registerBtn = document.getElementById('registerBtn');
+        const passwordInput = document.getElementById('password');
+        const confirmInput = document.getElementById('confirmPassword');
+        const errorMsg = document.getElementById('errorMsg');
+
+        async function fetchPublicKey() {
+            const resp = await fetch('/api/public-key');
+            const data = await resp.json();
+            return data.public_key;
+        }
+
+        async function register() {
+            const password = passwordInput.value.trim();
+            const confirm = confirmInput.value.trim();
+            if (!password) {
+                errorMsg.textContent = 'Please enter password | 请输入密码';
+                return;
+            }
+            if (password !== confirm) {
+                errorMsg.textContent = 'Passwords do not match | 两次密码不一致';
+                return;
+            }
+
+            try {
+                const publicKeyPem = await fetchPublicKey();
+                const encrypt = new JSEncrypt();
+                encrypt.setKey(publicKeyPem);
+                const encrypted = encrypt.encrypt(password);
+                if (!encrypted) {
+                    throw new Error('Encryption failed');
+                }
+
+                const resp = await fetch('/api/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: encrypted })
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    // Store token temporarily (will be consumed by index.html)
+                    localStorage.setItem('franxai_temp_token', result.token);
+                    window.location.href = '/';
+                } else {
+                    errorMsg.textContent = result.error || 'Setup failed | 设置失败';
+                }
+            } catch (err) {
+                errorMsg.textContent = 'Network error | 网络错误';
+                console.error(err);
+            }
+        }
+
+        registerBtn.addEventListener('click', register);
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') register();
+        });
+        confirmInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') register();
+        });
+    </script>
+</body>
+</html>

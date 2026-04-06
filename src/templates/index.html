@@ -427,6 +427,54 @@ You should have received a copy of the GNU General Public License along with Fra
     </div>
 
     <script>
+        // Authentication helper functions | 认证帮助函数
+        // Token stored only in memory (refreshing page clears it) | 仅存储在内存中（刷新页面即清除）
+        let memoryToken = null;
+
+        function getAuthToken() {
+            return memoryToken;
+        }
+
+        function setAuthToken(token) {
+            memoryToken = token;
+        }
+
+        function redirectToLogin() {
+            window.location.href = '/login';
+        }
+
+        async function checkAuth() {
+            const token = getAuthToken();
+            if (!token) {
+                redirectToLogin();
+                return false;
+            }
+            try {
+                const resp = await fetch('/api/check-auth', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await resp.json();
+                if (!data.authenticated) {
+                    setAuthToken(null);
+                    redirectToLogin();
+                    return false;
+                }
+                return true;
+            } catch (err) {
+                console.error('Auth check failed', err);
+                redirectToLogin();
+                return false;
+            }
+        }
+
+        function fetchWithAuth(url, options = {}) {
+            const token = getAuthToken();
+            const headers = options.headers || {};
+            headers['Authorization'] = `Bearer ${token}`;
+            return fetch(url, { ...options, headers });
+        }
+
+        // ========== Original code continues ==========
         const chatMessages = document.getElementById('chat-messages');
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
@@ -649,7 +697,7 @@ You should have received a copy of the GNU General Public License along with Fra
 
         async function loadTasks() {
             try {
-                const resp = await fetch('/tasks');
+                const resp = await fetchWithAuth('/tasks');
                 const data = await resp.json();
                 if (data.error) {
                     console.error('Failed to load tasks | 加载任务失败:', data.error);
@@ -667,7 +715,7 @@ You should have received a copy of the GNU General Public License along with Fra
 
         async function addTask(time, content) {
             try {
-                const resp = await fetch('/tasks', {
+                const resp = await fetchWithAuth('/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'add', time, content })
@@ -687,7 +735,7 @@ You should have received a copy of the GNU General Public License along with Fra
 
         async function deleteTask(time) {
             try {
-                const resp = await fetch('/tasks', {
+                const resp = await fetchWithAuth('/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action: 'delete', time })
@@ -723,7 +771,7 @@ You should have received a copy of the GNU General Public License along with Fra
         // Load and save configuration | 加载与保存配置
         async function loadConfig() {
             try {
-                const resp = await fetch('/config');
+                const resp = await fetchWithAuth('/config');
                 const config = await resp.json();
                 if (config.error) {
                     configStatus.innerText = 'Failed to load config | 加载配置失败: ' + config.error;
@@ -787,14 +835,14 @@ You should have received a copy of the GNU General Public License along with Fra
             };
             try {
                 // Get current full configuration (keep other unedited fields) | 获取当前完整配置（保留其他未编辑的字段）
-                const currentResp = await fetch('/config');
+                const currentResp = await fetchWithAuth('/config');
                 const currentConfig = await currentResp.json();
                 const mergedConfig = {
                     ...currentConfig,
                     ...newConfig,
                     tools: { ...currentConfig.tools, ...newConfig.tools }
                 };
-                const saveResp = await fetch('/config', {
+                const saveResp = await fetchWithAuth('/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(mergedConfig)
@@ -837,7 +885,7 @@ You should have received a copy of the GNU General Public License along with Fra
             let isFirstChunk = true;
 
             try {
-                const resp = await fetch('/chat', {
+                const resp = await fetchWithAuth('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ message: message }),
@@ -1007,7 +1055,7 @@ You should have received a copy of the GNU General Public License along with Fra
 
         async function stopTask(taskId) {
             try {
-                const resp = await fetch(`/cancel_task/${taskId}`, { method: 'POST' });
+                const resp = await fetchWithAuth(`/cancel_task/${taskId}`, { method: 'POST' });
                 const result = await resp.json();
                 if (result.status !== 'cancelling') {
                     alert('Stop failed | 停止失败: ' + (result.error || 'Unknown error | 未知错误'));
@@ -1033,11 +1081,24 @@ You should have received a copy of the GNU General Public License along with Fra
             }
         }
 
-        checkSessionAndClear().then(() => {
-            loadMessagesFromLocalStorage();
-            loadConfig();
-            loadTasks();  // Initial load of task list | 初始加载任务列表
-        });
+        // Run authentication check before loading page content | 在加载页面内容之前运行身份检查
+        (async function init() {
+            // Check for temporary token from login/register
+            const tempToken = localStorage.getItem('franxai_temp_token');
+            if (tempToken) {
+                // Move token to memory and remove temporary storage
+                setAuthToken(tempToken);
+                localStorage.removeItem('franxai_temp_token');
+            }
+
+            const authenticated = await checkAuth();
+            if (!authenticated) return; // will redirect
+            checkSessionAndClear().then(() => {
+                loadMessagesFromLocalStorage();
+                loadConfig();
+                loadTasks();  // Initial load of task list | 初始加载任务列表
+            });
+        })();
     </script>
 </body>
 </html>
