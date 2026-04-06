@@ -129,25 +129,18 @@ You should have received a copy of the GNU General Public License along with Fra
             align-self: flex-start;
             border-bottom-left-radius: 0.25rem;
             color: #0f172a;
-            display: flex;
-            align-items: baseline;
-            flex-wrap: wrap;
-            gap: 0.25rem;
-        }
-        .message.assistant .message-text {
-            flex: 0 1 auto;
-            word-break: break-word;
+            display: block;          /* 改为块级，让小球跟随文本流 */
         }
         .typing-dot {
+            display: inline-block;
             width: 10px;
             height: 10px;
             background: #1e293b;
             border-radius: 50%;
-            display: inline-block;
             animation: breathe 1.2s infinite ease-in-out;
-            flex-shrink: 0;
             margin-left: 4px;
             vertical-align: middle;
+            flex-shrink: 0;
         }
         .message.temp {
             opacity: 0.7;
@@ -173,17 +166,6 @@ You should have received a copy of the GNU General Public License along with Fra
             border-radius: 0.5rem;
         }
 
-        /* Breathing dot | 呼吸小球 */
-        .typing-dot {
-            width: 10px;
-            height: 10px;
-            background: #1e293b;
-            border-radius: 50%;
-            display: inline-block;
-            animation: breathe 1.2s infinite ease-in-out;
-            margin-left: 0.25rem;
-            flex-shrink: 0;
-        }
         @keyframes breathe {
             0%, 100% { transform: scale(0.8); opacity: 0.4; }
             50% { transform: scale(1.2); opacity: 1; }
@@ -665,11 +647,14 @@ You should have received a copy of the GNU General Public License along with Fra
         document.querySelectorAll('.message').forEach(msgDiv => {
             const role = msgDiv.classList.contains('user') ? 'user' : 'assistant';
             if (!msgDiv.classList.contains('temp')) {
-                // For assistant messages, extract text from .message-text span
                 if (role === 'assistant') {
-                    const textSpan = msgDiv.querySelector('.message-text');
-                    if (textSpan) messages.push({ role, content: textSpan.textContent });
-                    else messages.push({ role, content: msgDiv.textContent });
+                    // if _textNode exists, use its content, otherwise use the whole textContent (excluding breathing dot) | 提取文本：如果有 _textNode 则取其内容，否则用整体 textContent（排除呼吸小球）
+                    if (msgDiv._textNode) {
+                        messages.push({ role, content: msgDiv._textNode.textContent });
+                    } else {
+                        // if _textNode does not exist, use the whole textContent (including breathing dot) | 对于已经完成的消息（没有 _textNode），直接取 textContent 即可（小球已被移除）
+                        messages.push({ role, content: msgDiv.textContent });
+                    }
                 } else {
                     messages.push({ role, content: msgDiv.textContent });
                 }
@@ -693,23 +678,20 @@ You should have received a copy of the GNU General Public License along with Fra
     }
 
     // Add message, supports optional Markdown parsing | 添加消息，支持可选 Markdown 解析
-    // For assistant temporary messages, we also add a breathing dot
+    // For assistant temporary messages, we also add a breathing dot | 对助手临时消息，我们也添加一个呼吸小球
     function addMessage(role, content, temporary = false, extraClass = '', parseMarkdown = false) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role} ${extraClass}`;
         if (temporary) msgDiv.classList.add('temp');
 
         if (role === 'assistant' && temporary) {
-            // Create structure: text span + breathing dot
-            const textSpan = document.createElement('span');
-            textSpan.className = 'message-text';
-            textSpan.textContent = content;
+            // 使用文本节点 + 内联小球，使小球跟随文本末尾
+            const textNode = document.createTextNode(content);
             const dot = document.createElement('span');
             dot.className = 'typing-dot';
-            msgDiv.appendChild(textSpan);
+            msgDiv.appendChild(textNode);
             msgDiv.appendChild(dot);
-            // Store reference for later updates
-            msgDiv._textSpan = textSpan;
+            msgDiv._textNode = textNode;   // 存储文本节点引用
         } else if (parseMarkdown && !temporary) {
             const html = marked.parse(content);
             msgDiv.innerHTML = html;
@@ -726,10 +708,10 @@ You should have received a copy of the GNU General Public License along with Fra
         return msgDiv;
     }
 
-    // Update message content (for assistant temporary messages, update the text span)
+    // Update message content (for assistant temporary messages, update the text node)
     function updateMessage(msgDiv, content) {
-        if (msgDiv._textSpan) {
-            msgDiv._textSpan.textContent = content;
+        if (msgDiv._textNode) {
+            msgDiv._textNode.textContent = content;
         } else {
             msgDiv.textContent = content;
         }
@@ -742,8 +724,7 @@ You should have received a copy of the GNU General Public License along with Fra
     function removeTypingDot(msgDiv) {
         const dot = msgDiv.querySelector('.typing-dot');
         if (dot) dot.remove();
-        // Also remove the reference
-        delete msgDiv._textSpan;
+        delete msgDiv._textNode;
     }
 
     // Send/Stop button logic | 发送/停止按钮逻辑
@@ -781,7 +762,6 @@ You should have received a copy of the GNU General Public License along with Fra
             </div>
         `;
         const header = panel.querySelector('.knowledge-header');
-        const contentDiv = panel.querySelector('.knowledge-content');
         const inner = panel.querySelector('.knowledge-inner');
 
         // 添加点击切换动画
@@ -789,7 +769,6 @@ You should have received a copy of the GNU General Public License along with Fra
             const isOpen = panel.classList.contains('open');
             if (isOpen) {
                 panel.classList.remove('open');
-                // 可选：等待动画结束后再设置内容不可见，但 max-height 会自动处理
             } else {
                 panel.classList.add('open');
             }
