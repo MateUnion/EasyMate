@@ -125,3 +125,13 @@
 - Fixed identical vectors for all tools by removing the copyright comment block from each README, ensuring only meaningful content is vectorised.
 - Fixed skill documents dominating search results by adjusting type weights, document language order, and relying on FTS for keyword matching.
 - Fixed incremental update ignoring the `memories/` directory by including it in file state collection.
+
+## [v4.6.0](https://github.com/xhdlphzr/FranxAI/releases/tag/v4.6.0)
+- New animation system **Breath of Motion**: Introduces liquid glass bottom dock, page sliding transitions, AI reply breathing dot, and smooth expand/collapse animations for the console and knowledge panel.
+- Added RSA password authentication: Automatically generates a key pair on first run, encrypts password with public key on the frontend, decrypts with private key on the backend, enhancing login security.
+- Added JWT session management: Issues short-lived tokens (default 1 hour) after login, supports "refresh-to-re-login" mode (token stored only in memory, cleared on page refresh).
+- Integrated Cloudflare Tunnel: One‑click temporary tunnel to generate a publicly accessible URL, enabling remote access without a public IP.
+- Full mobile adaptation: Replaces sidebar with bottom dock, optimizes message bubbles and input area for touchscreens, supports phones and tablets.
+- Knowledge panel refactoring: Collapsible panel that displays retrieved knowledge, each item can be independently expanded to view full text, uses tech‑blue color scheme, scroll support for long documents.
+- Console no longer auto‑opens: User must click to open, avoiding interruption of the chat experience.
+- Added empty‑text check when inserting conversation memory into the vector database in real time, preventing invalid records from polluting search results.

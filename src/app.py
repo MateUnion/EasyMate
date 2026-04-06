@@ -198,7 +198,7 @@ def init_agents():
     thinking = config.get("thinking", False)
     max_iterations = config.get("max_iterations", 100)
     threshold = config.get("threshold", 20)
-    knowledge_k = config.get("knowledge_k", 1)
+    knowledge_k = config.get("knowledge_k", 5)
     
     settings = config.get("settings", "You are a helpful AI assistant. 你是一个有用的AI助手。")
     
@@ -454,8 +454,8 @@ def chat():
 
         # Retrieve knowledge and send to frontend | 检索知识并发送到前端
         try:
-            # Get knowledge_k from agent, default to 1 if not present | 从 agent 获取 knowledge_k，如果不存在则默认 1
-            k = getattr(chat_agent, 'knowledge_k', 1)
+            # Get knowledge_k from agent, default to 5 if not present | 从 agent 获取 knowledge_k，如果不存在则默认 5
+            k = getattr(chat_agent, 'knowledge_k', 5)
             relevant = search(user_message, k=k)
             for item in relevant:
                 # Send each knowledge item as a separate 'knowledge' event | 每条知识单独发送一个 knowledge 事件

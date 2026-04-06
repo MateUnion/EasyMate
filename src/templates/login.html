@@ -6,11 +6,13 @@
     <title>Login | FranxAI</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsencrypt/3.3.2/jsencrypt.min.js"></script>
     <style>
+        /* Reset styles | 重置样式 */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
+
         body {
             font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -19,6 +21,7 @@
             justify-content: center;
             align-items: center;
         }
+
         .login-container {
             background: white;
             border-radius: 20px;
@@ -28,16 +31,19 @@
             max-width: 400px;
             text-align: center;
         }
+
         h1 {
             font-size: 2rem;
             margin-bottom: 8px;
             color: #333;
         }
+
         .subtitle {
             color: #666;
             margin-bottom: 30px;
             font-size: 0.9rem;
         }
+
         input {
             width: 100%;
             padding: 12px 16px;
@@ -48,9 +54,11 @@
             outline: none;
             transition: border-color 0.2s;
         }
+
         input:focus {
             border-color: #667eea;
         }
+
         button {
             width: 100%;
             padding: 12px;
@@ -64,25 +72,49 @@
             transition: background 0.2s;
             margin-top: 10px;
         }
+
         button:hover {
             background: #5a67d8;
         }
+
         .error {
             color: #e53e3e;
             margin-top: 12px;
             font-size: 14px;
         }
+
         .info {
             margin-top: 20px;
             font-size: 14px;
             color: #666;
         }
+
         a {
             color: #667eea;
             text-decoration: none;
         }
+
         a:hover {
             text-decoration: underline;
+        }
+
+        /* Animation overlay | 动画覆盖层 */
+        .expand-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .expand-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
         }
     </style>
 </head>
@@ -99,30 +131,33 @@
     </div>
 
     <script>
+        // DOM elements | DOM 元素
         const loginBtn = document.getElementById('loginBtn');
         const passwordInput = document.getElementById('password');
         const errorMsg = document.getElementById('errorMsg');
 
+        // Create overlay element | 创建覆盖层元素
+        const overlay = document.createElement('div');
+        overlay.className = 'expand-overlay';
+        document.body.appendChild(overlay);
+
+        // Fetch RSA public key from server | 从服务器获取 RSA 公钥
         async function fetchPublicKey() {
             const resp = await fetch('/api/public-key');
             const data = await resp.json();
             return data.public_key;
         }
 
-        async function login() {
+        // Perform the actual login request | 执行实际的登录请求
+        async function performLogin() {
             const password = passwordInput.value.trim();
-            if (!password) {
-                errorMsg.textContent = 'Please enter password | 请输入密码';
-                return;
-            }
-
             try {
                 const publicKeyPem = await fetchPublicKey();
                 const encrypt = new JSEncrypt();
                 encrypt.setKey(publicKeyPem);
                 const encrypted = encrypt.encrypt(password);
                 if (!encrypted) {
-                    throw new Error('Encryption failed');
+                    throw new Error('Encryption failed | 加密失败');
                 }
 
                 const resp = await fetch('/api/login', {
@@ -132,18 +167,63 @@
                 });
                 const result = await resp.json();
                 if (resp.ok) {
-                    // Store token temporarily (will be consumed by index.html)
+                    // Store token temporarily (will be consumed by index.html) | 临时存储 token（将被 index.html 消费）
                     localStorage.setItem('franxai_temp_token', result.token);
                     window.location.href = '/';
                 } else {
                     errorMsg.textContent = result.error || 'Login failed | 登录失败';
+                    overlay.classList.remove('active');
                 }
             } catch (err) {
                 errorMsg.textContent = 'Network error | 网络错误';
                 console.error(err);
+                overlay.classList.remove('active');
             }
         }
 
+        // Login with animation | 带动画的登录入口
+        async function login() {
+            const password = passwordInput.value.trim();
+            if (!password) {
+                errorMsg.textContent = 'Please enter password | 请输入密码';
+                return;
+            }
+
+            // Start animation: button expands to full screen | 开始动画：按钮放大至全屏
+            const btn = loginBtn;
+            const rect = btn.getBoundingClientRect();
+            const clone = btn.cloneNode(true);
+            clone.style.position = 'fixed';
+            clone.style.top = rect.top + 'px';
+            clone.style.left = rect.left + 'px';
+            clone.style.width = rect.width + 'px';
+            clone.style.height = rect.height + 'px';
+            clone.style.margin = '0';
+            clone.style.zIndex = '10000';
+            clone.style.transition = 'all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1)';
+            clone.style.backgroundColor = getComputedStyle(btn).backgroundColor;
+            clone.style.borderRadius = getComputedStyle(btn).borderRadius;
+            document.body.appendChild(clone);
+
+            // Force reflow | 强制重绘
+            clone.offsetHeight;
+            clone.style.top = '0';
+            clone.style.left = '0';
+            clone.style.width = '100%';
+            clone.style.height = '100%';
+            clone.style.borderRadius = '0';
+            clone.style.backgroundColor = '#ffffff';
+
+            overlay.classList.add('active');
+
+            // Wait for animation to finish, then perform actual login | 等待动画完成，再执行登录
+            setTimeout(() => {
+                clone.remove();
+                performLogin();
+            }, 300);
+        }
+
+        // Event listeners | 事件监听
         loginBtn.addEventListener('click', login);
         passwordInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') login();
