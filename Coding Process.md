@@ -30,6 +30,11 @@ A universal workflow for turning ideas into reliable, maintainable code, using F
 
 #### 4. Edit Surgically
 - Use `write` in `edit` mode with `line_start` and `line_end` from `read`'s output.
+- **The Unbreakable Law of Line Numbers (for `edit` mode only, must NEVER be violated)**:
+    - **Do NOT calculate!** Your `start_line` and `end_line` MUST be the exact original line numbers from the most recent `read` operation, copied verbatim without any addition or subtraction.
+    - **Do NOT predict drift!** Do not think about "if I add a few lines here, the line numbers later will shift." That is the system's concern, not yours.
+    - **Burn this example into memory:** If `read` shows the lines you need to replace are 54 through 57, then you fill in `54` and `57`. Never ever fill in `59` or any number you derived yourself.
+    - **Pre-execution check:** Before calling `edit` mode, you MUST recite this mantra: "I am using line numbers [X, Y], which are the original line numbers from my last `read` operation."
 - Replace only the lines that need changing — keep diffs readable and `git blame` coherent.
 - When adding new functions or classes, use `edit` to insert at the correct position between neighbours, not appended at the end of the file.
 - Make exactly one logical change per edit. Re-`read` immediately afterwards to refresh line numbers and avoid line drift.
